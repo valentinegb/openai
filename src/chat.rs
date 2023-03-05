@@ -30,7 +30,7 @@ pub struct ChatCompletionMessage {
     pub content: String,
     /// The name of the user in a multi-user chat
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub user_name: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Copy)]
@@ -138,7 +138,7 @@ mod tests {
             [ChatCompletionMessage {
                 role: ChatCompletionMessageRole::User,
                 content: "Hello!".to_string(),
-                name: None,
+                user_name: None,
             }],
         )
         .temperature(0.0)
