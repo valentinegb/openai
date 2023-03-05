@@ -29,7 +29,7 @@ pub struct ChatCompletionMessage {
     /// The contents of the message
     pub content: String,
     /// The name of the user in a multi-user chat
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename(serialize = "name", deserialize = "user_name"))]
     pub user_name: Option<String>,
 }
 
