@@ -25,7 +25,7 @@ pub struct Components {
 #[serde(untagged)]
 pub enum Schema {
     Tagged(TaggedSchema),
-    Object { properties: HashMap<String, Schema> },
+    Object(Object),
     Other(serde_yaml::Value),
 }
 
@@ -35,9 +35,16 @@ pub enum Schema {
 pub enum TaggedSchema {
     Null,
     Boolean,
-    Object { properties: HashMap<String, Schema> },
+    Object(Object),
     Array,
     Number,
     String,
     Integer,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Object {
+    pub properties: HashMap<String, Schema>,
+    #[serde(default)]
+    pub required: Vec<String>,
 }
