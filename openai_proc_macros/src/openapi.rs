@@ -21,14 +21,12 @@ pub struct Components {
     pub schemas: HashMap<String, Schema>,
 }
 
-// TODO: find out why schemas are failing to deserialze >:(
-
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
 pub enum Schema {
     Tagged(TaggedSchema),
     Object { properties: HashMap<String, Schema> },
-    Other,
+    Other(serde_yaml::Value),
 }
 
 #[derive(Deserialize, Debug)]
