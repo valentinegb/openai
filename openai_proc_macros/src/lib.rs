@@ -15,8 +15,10 @@ pub fn generate_from_schema(_item: TokenStream) -> TokenStream {
     let openapi_schema: OpenApi =
         serde_yaml::from_slice(&file).expect("failed to deserialize 'openapi.yaml'");
 
-    for (component_name, component_schema) in openapi_schema.components.schemas {
-        dbg!(component_name, component_schema);
+    for (path, path_item) in openapi_schema.paths {
+        if let Some(operation) = path_item.get {
+            dbg!(path, operation.parameters);
+        }
     }
 
     // placeholder return value

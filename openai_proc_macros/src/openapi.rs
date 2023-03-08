@@ -8,12 +8,38 @@ use std::collections::HashMap;
 #[derive(Deserialize, Debug)]
 pub struct OpenApi {
     pub servers: Vec<Server>,
+    pub paths: HashMap<String, PathItem>,
     pub components: Components,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Server {
     pub url: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct PathItem {
+    pub get: Option<Operation>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Operation {
+    pub summary: String,
+    #[serde(rename = "operationId")]
+    pub operation_id: String,
+    #[serde(default)]
+    pub parameters: Vec<Parameter>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Parameter {
+    pub name: String,
+    pub r#in: String,
+    pub description: String,
+    pub required: bool,
+    #[serde(default)]
+    pub deprecated: bool,
+    pub schema: Schema,
 }
 
 #[derive(Deserialize, Debug)]
