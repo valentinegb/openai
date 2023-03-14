@@ -13,5 +13,6 @@ license.workspace = true
 proc-macro = true
 
 [dependencies]
+heck = "0.4.1"
 serde = { version = "1.0.153", features = ["derive"] }
 serde_yaml = "0.9.19"
