@@ -132,7 +132,7 @@ mod tests {
         set_key(std::env::var("OPENAI_KEY").unwrap());
 
         dbg!(models::list_models().await);
-        dbg!(models::retrieve_model("gpt-4").await);
+        dbg!(models::retrieve_model("text-davinci-003").await);
         dbg!(models::delete_model("made-up-model").await); // meant to return an `ApiError`
     }
 }
