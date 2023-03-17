@@ -14,7 +14,6 @@ pub fn generate_from_schema(_item: TokenStream) -> TokenStream {
     let openapi_schema: OpenApi =
         serde_yaml::from_slice(&file).expect("failed to deserialize 'openapi.yaml'");
 
-    // groups -> modules
     for group in openapi_schema.meta.groups {
         if let Some(warning) = group.warning {
             if warning.title.to_lowercase().contains("deprecated") {
@@ -22,7 +21,6 @@ pub fn generate_from_schema(_item: TokenStream) -> TokenStream {
             }
         }
 
-        // operations -> functions
         let mut group_get_operations: HashMap<String, Operation> = HashMap::new();
 
         for (path, path_item) in &openapi_schema.paths {
@@ -40,22 +38,43 @@ pub fn generate_from_schema(_item: TokenStream) -> TokenStream {
         let mut functions = String::new();
 
         for (path, operation) in group_get_operations {
-            if let Schema::Reference { reference } = operation.responses.ok.content.json.schema {
-                let component_name = reference.split('/').last();
-            }
+            let fn_documentation = operation.summary.replace("\n", "\n/// ");
+            let fn_name = operation.operation_id.to_snake_case();
+            let fn_return_type = match operation.responses.ok.content.json.schema {
+                Schema::Reference { reference } => reference.split('/').last().unwrap().to_string(),
+                Schema::Type { r#type } => r#type,
+            };
 
             functions += &format!(
-                "/// {}\npub fn {}() {{}}",
-                operation.summary.replace("\n", "\n/// "),
-                operation.operation_id.to_snake_case()
+                "/// {fn_documentation}
+                pub async fn {fn_name}({}) -> ResponseOrError<{fn_return_type}> {{
+                    Client::new()
+                        .get(\"{}{}\")
+                        .header(
+                            \"Authorization\",
+                            format!(\"Bearer {{}}\", API_KEY.lock().unwrap()),
+                        )
+                        .send()
+                        .await
+                        .unwrap()
+                        .json()
+                        .await
+                        .unwrap()
+                }}"
             );
         }
 
-        // modules with functions
+        let mod_documentation = group.description.replace("\n", "\n/// ");
+        let mod_name = group.id.to_snake_case();
+
         result += &format!(
-            "/// {}\npub mod {} {{{functions}}}",
-            group.description.replace("\n", "\n/// "),
-            group.id.to_snake_case()
+            "/// {mod_documentation}
+            pub mod {mod_name} {{
+                use crate::{{components::*, *}};
+                use reqwest::Client;
+
+                {functions}
+            }}"
         );
     }
 
