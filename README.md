@@ -10,15 +10,3 @@ An unofficial Rust library for the OpenAI API.
 > **Warning**
 > 
 > Currently in alpha, I wouldn't recommend using in any production applications.
-
-## Core Principles
-
-- Instead of accessing all functions as methods on a single client-like structure,
-  functions should be accessed from their own modules.
-- Environmental variables should be the prioitized method of authentication,
-  but you shouldn't be forced to do things this way.
-- This is a LIBRARY, not a WRAPPER!
-  The goal here isn't to just give some basic wrapper functions for making HTTP requests,
-  it's to "rust-ify" things. We want to create the illusion that the OpenAI API was made in Rust first!
-- What is this, C? No, it's Rust! We follow the object-oriented paradigm, not the procedural one.
-  What this mainly means is less `create_completion()`, more `Completion::create()`.
