@@ -1,27 +1,10 @@
 mod openapi;
 
 extern crate proc_macro;
+use heck::ToSnakeCase;
 use openapi::*;
 use proc_macro::TokenStream;
 use std::{collections::HashMap, fs};
-
-fn organize_operation(
-    groups: &mut HashMap<String, HashMap<String, Operation>>,
-    operation_kind: &str,
-    path: &str,
-    operation: Operation,
-) {
-    let operation_and_path = format!("{operation_kind} {path}");
-
-    if let Some(group) = groups.get_mut(&operation.meta.group) {
-        group.insert(operation_and_path, operation);
-    } else {
-        groups.insert(
-            operation.meta.group.clone(),
-            [(operation_and_path, operation)].into(),
-        );
-    }
-}
 
 #[proc_macro]
 pub fn generate_from_schema(_item: TokenStream) -> TokenStream {
@@ -31,24 +14,49 @@ pub fn generate_from_schema(_item: TokenStream) -> TokenStream {
     let openapi_schema: OpenApi =
         serde_yaml::from_slice(&file).expect("failed to deserialize 'openapi.yaml'");
 
-    let mut groups: HashMap<String, HashMap<String, Operation>> = HashMap::new();
-
-    for (path, item) in openapi_schema.paths {
-        if let Some(operation) = item.get {
-            organize_operation(&mut groups, "GET", &path, operation);
+    // groups -> modules
+    for group in openapi_schema.meta.groups {
+        if let Some(warning) = group.warning {
+            if warning.title.to_lowercase().contains("deprecated") {
+                continue;
+            }
         }
 
-        if let Some(operation) = item.post {
-            organize_operation(&mut groups, "POST", &path, operation);
+        // operations -> functions
+        let mut group_get_operations: HashMap<String, Operation> = HashMap::new();
+
+        for (path, path_item) in &openapi_schema.paths {
+            if let Some(operation) = &path_item.get {
+                if operation.deprecated {
+                    continue;
+                }
+
+                if operation.meta.group == group.id {
+                    group_get_operations.insert(path.clone(), operation.clone());
+                }
+            }
         }
 
-        if let Some(operation) = item.delete {
-            organize_operation(&mut groups, "DELETE", &path, operation);
-        }
-    }
+        let mut functions = String::new();
 
-    for group in groups {
-        // TODO: create modules for each group containing functions for their operations
+        for (path, operation) in group_get_operations {
+            if let Schema::Reference { reference } = operation.responses.ok.content.json.schema {
+                let component_name = reference.split('/').last();
+            }
+
+            functions += &format!(
+                "/// {}\npub fn {}() {{}}",
+                operation.summary.replace("\n", "\n/// "),
+                operation.operation_id.to_snake_case()
+            );
+        }
+
+        // modules with functions
+        result += &format!(
+            "/// {}\npub mod {} {{{functions}}}",
+            group.description.replace("\n", "\n/// "),
+            group.id.to_snake_case()
+        );
     }
 
     dbg!(&result);

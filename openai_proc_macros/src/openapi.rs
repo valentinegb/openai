@@ -7,14 +7,9 @@ use std::collections::HashMap;
 
 #[derive(Deserialize, Debug, Clone)]
 pub(crate) struct OpenApi {
-    pub(crate) servers: Vec<Server>,
     pub(crate) paths: HashMap<String, PathItem>,
-    pub(crate) components: Components,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub(crate) struct Server {
-    pub(crate) url: String,
+    #[serde(rename = "x-oaiMeta")]
+    pub(crate) meta: OpenAiOpenApiMeta,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -26,122 +21,69 @@ pub(crate) struct PathItem {
 
 #[derive(Deserialize, Debug, Clone)]
 pub(crate) struct Operation {
-    pub(crate) summary: String,
     #[serde(rename = "operationId")]
     pub(crate) operation_id: String,
     #[serde(default)]
-    pub(crate) parameters: Vec<Parameter>,
-    #[serde(rename = "requestBody")]
-    pub(crate) request_body: Option<RequestBody>,
+    pub(crate) deprecated: bool,
+    pub(crate) summary: String,
     pub(crate) responses: Responses,
-    #[serde(default)]
-    pub(crate) deprecated: bool,
     #[serde(rename = "x-oaiMeta")]
-    pub(crate) meta: OpenAiMeta,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub(crate) struct Parameter {
-    pub(crate) name: String,
-    pub(crate) r#in: String,
-    pub(crate) description: String,
-    pub(crate) required: bool,
-    #[serde(default)]
-    pub(crate) deprecated: bool,
-    pub(crate) schema: Schema,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub(crate) struct RequestBody {
-    pub(crate) description: Option<String>,
-    pub(crate) content: HashMap<String, MediaType>,
-    pub(crate) required: bool,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub(crate) struct MediaType {
-    pub(crate) schema: SchemaOrReference,
+    pub(crate) meta: OpenAiOperationMeta,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub(crate) struct Responses {
-    pub(crate) default: Option<Response>,
-    #[serde(flatten)]
-    pub(crate) statuses: HashMap<String, Response>,
+    #[serde(rename = "200")]
+    pub(crate) ok: Response,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub(crate) struct Response {
-    pub(crate) description: String,
-    pub(crate) content: HashMap<String, Header>,
+    pub(crate) content: ResponseContent,
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub(crate) struct Header {
-    pub(crate) schema: SchemaOrReference,
+pub(crate) struct ResponseContent {
+    #[serde(rename = "application/json")]
+    pub(crate) json: MediaType,
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub(crate) struct Reference {
-    #[serde(rename = "$ref")]
-    pub(crate) r#ref: String,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(untagged)]
-pub(crate) enum SchemaOrReference {
-    Reference(Reference),
-    Schema(Schema),
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub(crate) struct Components {
-    pub(crate) schemas: HashMap<String, Schema>,
+pub(crate) struct MediaType {
+    pub(crate) schema: Schema,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
+#[serde(rename_all = "PascalCase")]
 pub(crate) enum Schema {
-    Tagged(TaggedSchema),
-    Object(ObjectSchema),
+    Reference {
+        #[serde(rename = "$ref")]
+        reference: String,
+    },
+    Type {
+        r#type: String,
+    },
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-#[serde(tag = "type")]
-pub(crate) enum TaggedSchema {
-    Null,
-    Boolean,
-    Object(ObjectSchema),
-    Array,
-    Number,
-    String,
-    Integer,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub(crate) struct ObjectSchema {
-    pub(crate) properties: Option<HashMap<String, Schema>>,
-    #[serde(default)]
-    pub(crate) required: Vec<String>,
-    #[serde(rename = "x-oaiTypeLabel")]
-    pub(crate) type_label: Option<String>,
-    #[serde(default)]
-    pub(crate) nullable: bool,
-    pub(crate) description: Option<String>,
-    pub(crate) default: Option<serde_yaml::Value>,
-    pub(crate) title: Option<String>, // <-- last here
-    #[serde(flatten)]
-    pub(crate) other: serde_yaml::Value,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub(crate) struct OpenAiMeta {
-    pub(crate) name: String,
+pub(crate) struct OpenAiOperationMeta {
     pub(crate) group: String,
-    pub(crate) path: String,
-    pub(crate) parameters: Option<String>,
-    pub(crate) response: Option<String>,
-    #[serde(default)]
-    pub(crate) beta: bool,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub(crate) struct OpenAiOpenApiMeta {
+    pub(crate) groups: Vec<Group>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub(crate) struct Group {
+    pub(crate) id: String,
+    pub(crate) description: String,
+    pub(crate) warning: Option<GroupWarning>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub(crate) struct GroupWarning {
+    pub(crate) title: String,
 }
