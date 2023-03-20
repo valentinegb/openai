@@ -59,12 +59,10 @@ pub fn generate_from_schema(_item: TokenStream) -> TokenStream {
                 );
             }
 
-            // TODO: the format!() macro in .get() doesn't work and I have no idea why
+            // TODO: the format!() macro in .get() doesn't work but the one in .header() does and I have no idea why
             functions += &format!(
                 "/// {fn_documentation}
-                pub async fn {fn_name}(
-                    {fn_parameters}
-                ) -> ResponseOrError<{fn_return_type}> {{
+                pub async fn {fn_name}({fn_parameters}) -> ResponseOrError<{fn_return_type}> {{
                     Client::new()
                         .get(format!(\"{base_url}{path}\"))
                         .header(
