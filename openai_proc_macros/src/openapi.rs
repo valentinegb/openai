@@ -7,9 +7,16 @@ use std::collections::HashMap;
 
 #[derive(Deserialize, Debug, Clone)]
 pub(crate) struct OpenApi {
+    pub(crate) servers: Vec<Server>,
     pub(crate) paths: HashMap<String, PathItem>,
+    pub(crate) components: Components,
     #[serde(rename = "x-oaiMeta")]
     pub(crate) meta: OpenAiOpenApiMeta,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub(crate) struct Server {
+    pub(crate) url: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -26,9 +33,31 @@ pub(crate) struct Operation {
     #[serde(default)]
     pub(crate) deprecated: bool,
     pub(crate) summary: String,
+    #[serde(default)]
+    pub(crate) parameters: Vec<Parameter>,
     pub(crate) responses: Responses,
     #[serde(rename = "x-oaiMeta")]
     pub(crate) meta: OpenAiOperationMeta,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub(crate) struct Parameter {
+    pub(crate) name: String,
+    pub(crate) r#in: ParameterLocation,
+    pub(crate) description: String,
+    pub(crate) required: bool,
+    #[serde(default)]
+    pub(crate) deprecated: bool,
+    pub(crate) schema: Schema,
+}
+
+#[derive(Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ParameterLocation {
+    Path,
+    Query,
+    Header,
+    Cookie,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -55,20 +84,52 @@ pub(crate) struct MediaType {
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
-#[serde(rename_all = "PascalCase")]
 pub(crate) enum Schema {
     Reference {
         #[serde(rename = "$ref")]
         reference: String,
     },
     Type {
-        r#type: String,
+        r#type: Option<SchemaType>,
     },
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum SchemaType {
+    Boolean,
+    Object,
+    Array,
+    Number,
+    String,
+    Integer,
+}
+
+impl std::fmt::Display for SchemaType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Boolean => "bool",
+                Self::Object => "HashMap<String, serde_json::Value>",
+                Self::Array => "Vec<serde_json::Value>",
+                Self::Number => "f64",
+                Self::String => "String",
+                Self::Integer => "i64",
+            }
+        )
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub(crate) struct OpenAiOperationMeta {
     pub(crate) group: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub(crate) struct Components {
+    pub(crate) schemas: HashMap<String, Schema>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
