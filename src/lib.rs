@@ -1,6 +1,7 @@
 use reqwest::{header::AUTHORIZATION, Client, Method, RequestBuilder};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::sync::Mutex;
+use lazy_static::lazy_static;
 
 pub mod chat;
 pub mod completions;
@@ -9,9 +10,11 @@ pub mod embeddings;
 pub mod models;
 pub mod moderations;
 
-const BASE_URL: &str = "https://api.openai.com/v1/";
 
 static API_KEY: Mutex<String> = Mutex::new(String::new());
+lazy_static! {
+    static ref BASE_URL: Mutex<String> = Mutex::new(String::from("https://api.openai.com/v1/"));
+}
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct OpenAiError {
@@ -52,7 +55,7 @@ where
     T: DeserializeOwned,
 {
     let client = Client::new();
-    let mut request = client.request(method, BASE_URL.to_owned() + route);
+    let mut request = client.request(method, BASE_URL.lock().unwrap().to_owned() + route);
 
     request = builder(request);
 
@@ -100,4 +103,10 @@ where
 /// ```
 pub fn set_key(value: String) {
     *API_KEY.lock().unwrap() = value;
+}
+
+/// Sets the base url for all OpenAI API functions.
+/// Useful to route them through proxies.
+pub fn set_base_url(value: String) {
+    *BASE_URL.lock().unwrap() = value;
 }
