@@ -4,21 +4,21 @@ use super::{openai_post, ApiResponseOrError};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Moderation {
     pub id: String,
     pub model: String,
     pub results: Vec<ModerationResult>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ModerationResult {
     pub flagged: bool,
     pub categories: Categories,
     pub category_scores: CategoryScores,
 }
 
-#[derive(Deserialize, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Categories {
     pub hate: bool,
     #[serde(rename = "hate/threatening")]
@@ -33,7 +33,7 @@ pub struct Categories {
     pub violence_graphic: bool,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CategoryScores {
     pub hate: f64,
     #[serde(rename = "hate/threatening")]
