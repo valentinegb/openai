@@ -8,6 +8,7 @@ pub mod edits;
 pub mod embeddings;
 pub mod models;
 pub mod moderations;
+pub mod images;
 
 const BASE_URL: &str = "https://api.openai.com/v1/";
 
