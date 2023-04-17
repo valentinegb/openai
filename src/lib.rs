@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use reqwest::{header::AUTHORIZATION, Client, Method, RequestBuilder};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::sync::Mutex;
@@ -9,7 +10,7 @@ pub mod embeddings;
 pub mod models;
 pub mod moderations;
 
-const BASE_URL: &str = "https://api.openai.com/v1/";
+static BASE_URL: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new("https://api.openai.com/v1/".to_string()));
 
 static API_KEY: Mutex<String> = Mutex::new(String::new());
 
@@ -52,7 +53,7 @@ where
     T: DeserializeOwned,
 {
     let client = Client::new();
-    let mut request = client.request(method, BASE_URL.to_owned() + route);
+    let mut request = client.request(method, BASE_URL.lock().unwrap().to_owned() + route);
 
     request = builder(request);
 
@@ -100,4 +101,19 @@ where
 /// ```
 pub fn set_key(value: String) {
     *API_KEY.lock().unwrap() = value;
+}
+
+/// Sets the base URL for all OpenAI API functions.
+///
+/// ## Examples
+///
+/// Use a custom Azure OpenAI endpoint
+///
+/// ```rust
+/// use openai::set_base_url;
+///
+/// set_base_url("https://docs-test-001.openai.azure.com/openai/deployments/gpt-3.5-turbo/chat/completions?api-version=2023-03-15-preview");
+/// ```
+pub fn set_base_url(value: String) {
+    *BASE_URL.lock().unwrap() = value;
 }
