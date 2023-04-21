@@ -126,9 +126,9 @@ pub fn set_key(value: String) {
 /// Use a custom Azure OpenAI endpoint
 ///
 /// ```rust
-/// use openai::{set_base_url,ApiType};
+/// use openai::{set_api_type, ApiType};
 ///
-/// set_base_url(ApiType::Azure);
+/// set_api_type(ApiType::Azure);
 /// ```
 pub fn set_api_type(value: ApiType) {
     *API_TYPE.lock().unwrap() = value;
@@ -143,7 +143,7 @@ pub fn set_api_type(value: ApiType) {
 /// ```rust
 /// use openai::set_base_url;
 ///
-/// set_base_url("https://docs-test-001.openai.azure.com/openai/deployments/my-own-gpt-3.5");
+/// set_base_url("https://docs-test-001.openai.azure.com/openai/deployments/my-own-gpt-3.5".to_string());
 /// ```
 pub fn set_base_url(value: String) {
     *BASE_URL.lock().unwrap() = value;
