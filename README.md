@@ -1,3 +1,8 @@
+### Archival Notice
+This project is no longer maintained and has been archived. I apologize for any inconvenience this may cause. If you are willing to fork this repository and continue to maintain the project, I encourage you to do so. The `openai` crate name is still owned by me on https://crates.io. If you would like me to transfer ownership, please contact me. You can email me at valentinegb@icloud.com. However, please check my GitHub profile in case my email has changed, as I will not be able to edit this message after this repository is archived. Below this notice is the project's `README.md` as it was before being archived.
+
+---
+
 # openai [![crates.io](https://img.shields.io/crates/v/openai.svg)](https://crates.io/crates/openai/) [![Rust workflow](https://github.com/valentinegb/openai/actions/workflows/rust.yml/badge.svg)](https://github.com/valentinegb/openai/actions/workflows/rust.yml)
 
 An unofficial Rust library for the OpenAI API.
