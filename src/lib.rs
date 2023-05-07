@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use reqwest::{header::AUTHORIZATION, Client, Method, RequestBuilder};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::sync::Mutex;
@@ -9,9 +10,18 @@ pub mod embeddings;
 pub mod models;
 pub mod moderations;
 
-const BASE_URL: &str = "https://api.openai.com/v1/";
+static BASE_URL: Lazy<Mutex<String>> =
+    Lazy::new(|| Mutex::new("https://api.openai.com/v1/".to_string()));
 
 static API_KEY: Mutex<String> = Mutex::new(String::new());
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum ApiType {
+    OpenAi,
+    Azure,
+}
+
+static API_TYPE: Mutex<ApiType> = Mutex::new(ApiType::OpenAi);
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct OpenAiError {
@@ -52,16 +62,23 @@ where
     T: DeserializeOwned,
 {
     let client = Client::new();
-    let mut request = client.request(method, BASE_URL.to_owned() + route);
+    let mut url = BASE_URL.lock().unwrap().to_owned() + route;
+    let api_type = *API_TYPE.lock().unwrap();
+    if api_type == ApiType::Azure {
+        url += "?api-version=2023-03-15-preview";
+    }
+
+    let mut request = client.request(method, url);
 
     request = builder(request);
 
-    let api_response: ApiResponse<T> = request
-        .header(AUTHORIZATION, format!("Bearer {}", API_KEY.lock().unwrap()))
-        .send()
-        .await?
-        .json()
-        .await?;
+    let key = API_KEY.lock().unwrap();
+    if api_type == ApiType::OpenAi {
+        request = request.header(AUTHORIZATION, format!("Bearer {}", key))
+    } else {
+        request = request.header("api-key", key.to_string())
+    }
+    let api_response: ApiResponse<T> = request.send().await?.json().await?;
 
     match api_response {
         ApiResponse::Ok(t) => Ok(Ok(t)),
@@ -100,4 +117,34 @@ where
 /// ```
 pub fn set_key(value: String) {
     *API_KEY.lock().unwrap() = value;
+}
+
+/// Sets the API type that is used
+///
+/// ## Examples
+///
+/// Use a custom Azure OpenAI endpoint
+///
+/// ```rust
+/// use openai::{set_api_type, ApiType};
+///
+/// set_api_type(ApiType::Azure);
+/// ```
+pub fn set_api_type(value: ApiType) {
+    *API_TYPE.lock().unwrap() = value;
+}
+
+/// Sets the base URL for all OpenAI API functions.
+///
+/// ## Examples
+///
+/// Use a custom Azure OpenAI endpoint
+///
+/// ```rust
+/// use openai::set_base_url;
+///
+/// set_base_url("https://docs-test-001.openai.azure.com/openai/deployments/my-own-gpt-3.5".to_string());
+/// ```
+pub fn set_base_url(value: String) {
+    *BASE_URL.lock().unwrap() = value;
 }
