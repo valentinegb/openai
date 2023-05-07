@@ -1,25 +1,43 @@
 //! Given a chat conversation, the model will return a chat completion response.
 
 use super::{openai_post, ApiResponseOrError, Usage};
+use crate::openai_request_stream;
 use derive_builder::Builder;
+use futures_util::StreamExt;
+use reqwest::Method;
+use reqwest_eventsource::{CannotCloneRequestError, Event, EventSource};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-#[derive(Deserialize, Clone)]
-pub struct ChatCompletion {
+/// A full chat completion.
+pub type ChatCompletion = ChatCompletionGeneric<ChatCompletionChoice>;
+
+/// A delta chat completion, which is streamed token by token.
+pub type ChatCompletionDelta = ChatCompletionGeneric<ChatCompletionChoiceDelta>;
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct ChatCompletionGeneric<C> {
     pub id: String,
     pub object: String,
     pub created: u64,
     pub model: String,
-    pub choices: Vec<ChatCompletionChoice>,
+    pub choices: Vec<C>,
     pub usage: Option<Usage>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct ChatCompletionChoice {
     pub index: u64,
-    pub message: ChatCompletionMessage,
     pub finish_reason: String,
+    pub message: ChatCompletionMessage,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct ChatCompletionChoiceDelta {
+    pub index: u64,
+    pub finish_reason: Option<String>,
+    pub delta: ChatCompletionMessageDelta,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -28,6 +46,18 @@ pub struct ChatCompletionMessage {
     pub role: ChatCompletionMessageRole,
     /// The contents of the message
     pub content: String,
+    /// The name of the user in a multi-user chat
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+/// Same as ChatCompletionMessage, but received during a response stream.
+#[derive(Deserialize, Clone, Debug)]
+pub struct ChatCompletionMessageDelta {
+    /// The role of the author of this message.
+    pub role: Option<ChatCompletionMessageRole>,
+    /// The contents of the message
+    pub content: Option<String>,
     /// The name of the user in a multi-user chat
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -46,7 +76,8 @@ pub enum ChatCompletionMessageRole {
 #[builder(name = "ChatCompletionBuilder")]
 #[builder(setter(strip_option, into))]
 pub struct ChatCompletionRequest {
-    /// ID of the model to use. Currently, only `gpt-3.5-turbo` and `gpt-3.5-turbo-0301` are supported.
+    /// ID of the model to use. Currently, only `gpt-3.5-turbo`, `gpt-3.5-turbo-0301` and `gpt-4`
+    /// are supported.
     model: String,
     /// The messages to generate chat completions for, in the [chat format](https://platform.openai.com/docs/guides/chat/introduction).
     messages: Vec<ChatCompletionMessage>,
@@ -66,9 +97,7 @@ pub struct ChatCompletionRequest {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     n: Option<u8>,
-    /// If set, partial message deltas will be sent, like in ChatGPT. Tokens will be sent as data-only [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#Event_stream_format)
-    /// as they become available, with the stream terminated by a `data: [DONE]` message.
-    #[builder(setter(skip), default)] // skipped until properly implemented
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
     /// Up to 4 sequences where the API will stop generating further tokens.
@@ -103,7 +132,7 @@ pub struct ChatCompletionRequest {
     user: String,
 }
 
-impl ChatCompletion {
+impl<C> ChatCompletionGeneric<C> {
     pub fn builder(
         model: &str,
         messages: impl Into<Vec<ChatCompletionMessage>>,
@@ -112,15 +141,158 @@ impl ChatCompletion {
             .model(model)
             .messages(messages)
     }
+}
 
+impl ChatCompletion {
     pub async fn create(request: &ChatCompletionRequest) -> ApiResponseOrError<Self> {
         openai_post("chat/completions", request).await
     }
 }
 
+impl ChatCompletionDelta {
+    pub async fn create(
+        request: &ChatCompletionRequest,
+    ) -> Result<Receiver<Self>, CannotCloneRequestError> {
+        let stream =
+            openai_request_stream(Method::POST, "chat/completions", |r| r.json(request)).await?;
+        let (tx, rx) = channel::<Self>(32);
+        tokio::spawn(forward_deserialized_chat_response_stream(stream, tx));
+        Ok(rx)
+    }
+
+    /// Merges the input delta completion into `self`.
+    pub fn merge(
+        &mut self,
+        other: ChatCompletionDelta,
+    ) -> Result<(), ChatCompletionDeltaMergeError> {
+        if other.id.ne(&self.id) {
+            return Err(ChatCompletionDeltaMergeError::DifferentCompletionIds);
+        }
+        for other_choice in other.choices.iter() {
+            for choice in self.choices.iter_mut() {
+                if choice.index != other_choice.index {
+                    continue;
+                }
+                choice.merge(other_choice)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl ChatCompletionChoiceDelta {
+    pub fn merge(
+        &mut self,
+        other: &ChatCompletionChoiceDelta,
+    ) -> Result<(), ChatCompletionDeltaMergeError> {
+        if self.index != other.index {
+            return Err(ChatCompletionDeltaMergeError::DifferentCompletionChoiceIndices);
+        }
+        if self.delta.role.is_none() {
+            if let Some(other_role) = other.delta.role {
+                // Set role to other_role.
+                self.delta.role = Some(other_role);
+            }
+        }
+        if self.delta.name.is_none() {
+            if let Some(other_name) = &other.delta.name {
+                // Set name to other_name.
+                self.delta.name = Some(other_name.clone());
+            }
+        }
+        // Merge contents.
+        match self.delta.content.as_mut() {
+            Some(content) => {
+                match &other.delta.content {
+                    Some(other_content) => {
+                        // Push other content into this one.
+                        content.push_str(other_content)
+                    }
+                    None => {}
+                }
+            }
+            None => {
+                match &other.delta.content {
+                    Some(other_content) => {
+                        // Set this content to other content.
+                        self.delta.content = Some(other_content.clone());
+                    }
+                    None => {}
+                }
+            }
+        };
+        Ok(())
+    }
+}
+
+impl From<ChatCompletionDelta> for ChatCompletion {
+    fn from(delta: ChatCompletionDelta) -> Self {
+        ChatCompletion {
+            id: delta.id,
+            object: delta.object,
+            created: delta.created,
+            model: delta.model,
+            usage: delta.usage,
+            choices: delta
+                .choices
+                .iter()
+                .map(|choice| ChatCompletionChoice {
+                    index: choice.index,
+                    finish_reason: clone_default_unwrapped_option_string(&choice.finish_reason),
+                    message: ChatCompletionMessage {
+                        role: choice
+                            .delta
+                            .role
+                            .unwrap_or_else(|| ChatCompletionMessageRole::System),
+                        content: clone_default_unwrapped_option_string(&choice.delta.content),
+                        name: choice.delta.name.clone(),
+                    },
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ChatCompletionDeltaMergeError {
+    DifferentCompletionIds,
+    DifferentCompletionChoiceIndices,
+}
+
+async fn forward_deserialized_chat_response_stream(
+    mut stream: EventSource,
+    tx: Sender<ChatCompletionDelta>,
+) -> anyhow::Result<()> {
+    while let Some(event) = stream.next().await {
+        let event = event?;
+        match event {
+            Event::Message(event) => {
+                let completion = serde_json::from_str::<ChatCompletionDelta>(&event.data)?;
+                tx.send(completion).await?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 impl ChatCompletionBuilder {
     pub async fn create(self) -> ApiResponseOrError<ChatCompletion> {
         ChatCompletion::create(&self.build().unwrap()).await
+    }
+
+    pub async fn create_stream(
+        mut self,
+    ) -> Result<Receiver<ChatCompletionDelta>, CannotCloneRequestError> {
+        self.stream = Some(Some(true));
+        ChatCompletionDelta::create(&self.build().unwrap()).await
+    }
+}
+
+fn clone_default_unwrapped_option_string(string: &Option<String>) -> String {
+    match string {
+        Some(value) => value.clone(),
+        None => "".to_string(),
     }
 }
 
@@ -154,5 +326,46 @@ mod tests {
             chat_completion.choices.first().unwrap().message.content,
             "Hello there! How can I assist you today?"
         );
+    }
+
+    #[tokio::test]
+    async fn chat_stream() {
+        dotenv().ok();
+        set_key(env::var("OPENAI_KEY").unwrap());
+
+        let chat_stream = ChatCompletion::builder(
+            "gpt-3.5-turbo",
+            [ChatCompletionMessage {
+                role: ChatCompletionMessageRole::User,
+                content: "Hello!".to_string(),
+                name: None,
+            }],
+        )
+        .temperature(0.0)
+        .create_stream()
+        .await
+        .unwrap();
+
+        let chat_completion = stream_to_completion(chat_stream).await;
+
+        assert_eq!(
+            chat_completion.choices.first().unwrap().message.content,
+            "Hello there! How can I assist you today?"
+        );
+    }
+
+    async fn stream_to_completion(
+        mut chat_stream: Receiver<ChatCompletionDelta>,
+    ) -> ChatCompletion {
+        let mut merged: Option<ChatCompletionDelta> = None;
+        while let Some(delta) = chat_stream.recv().await {
+            match merged.as_mut() {
+                Some(c) => {
+                    c.merge(delta).unwrap();
+                }
+                None => merged = Some(delta),
+            };
+        }
+        merged.unwrap().into()
     }
 }

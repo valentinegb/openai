@@ -1,4 +1,5 @@
 use reqwest::{header::AUTHORIZATION, Client, Method, RequestBuilder};
+use reqwest_eventsource::{CannotCloneRequestError, EventSource, RequestBuilderExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::sync::Mutex;
 
@@ -37,7 +38,7 @@ pub enum ApiResponse<T> {
     Err { error: OpenAiError },
 }
 
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Deserialize, Clone, Copy, Debug)]
 pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -67,6 +68,26 @@ where
         ApiResponse::Ok(t) => Ok(Ok(t)),
         ApiResponse::Err { error } => Ok(Err(error)),
     }
+}
+
+async fn openai_request_stream<F>(
+    method: Method,
+    route: &str,
+    builder: F,
+) -> Result<EventSource, CannotCloneRequestError>
+where
+    F: FnOnce(RequestBuilder) -> RequestBuilder,
+{
+    let client = Client::new();
+    let mut request = client.request(method, BASE_URL.to_owned() + route);
+
+    request = builder(request);
+
+    let stream = request
+        .header(AUTHORIZATION, format!("Bearer {}", API_KEY.lock().unwrap()))
+        .eventsource()?;
+
+    Ok(stream)
 }
 
 async fn openai_get<T>(route: &str) -> ApiResponseOrError<T>
